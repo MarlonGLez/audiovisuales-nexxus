@@ -368,138 +368,138 @@ export default function App() {
               </p>
             )}
 
-            <section className="catalog" id="catalogo">
-  <h2>Explora nuestro catálogo</h2>
-  <p>Encuentra lo que estás buscando.</p>
+                      <section className="catalog" id="catalogo">
+                          <h2>Explora nuestro catálogo</h2>
+                          <p>Encuentra lo que estás buscando.</p>
 
-  <input
-    type="search"
-    placeholder="Buscar películas, series, juegos..."
-    value={searchTerm}
-    onChange={(e) => setSearchTerm(e.target.value)}
-    style={{
-      width: '100%',
-      maxWidth: '500px',
-      padding: '14px',
-      margin: '20px auto',
-      display: 'block',
-      borderRadius: '10px',
-      border: '1px solid #294563',
-      background: '#0b1c30',
-      color: 'white',
-      boxSizing: 'border-box',
-    }}
-  />
+                          <input
+                              type="search"
+                              placeholder="Buscar películas, series, juegos..."
+                              value={searchTerm}
+                              onChange={(e) => setSearchTerm(e.target.value)}
+                              style={{
+                                  width: '100%',
+                                  maxWidth: '500px',
+                                  padding: '14px',
+                                  margin: '20px auto',
+                                  display: 'block',
+                                  borderRadius: '10px',
+                                  border: '1px solid #294563',
+                                  background: '#0b1c30',
+                                  color: 'white',
+                                  boxSizing: 'border-box',
+                              }}
+                          />
 
-  <div className="categories">
-    <div
-      className="category"
-      onClick={() => setSelectedCategory('all')}
-      style={{
-        cursor: 'pointer',
-        border: selectedCategory === 'all'
-          ? '2px solid #58c7ff'
-          : undefined,
-      }}
-    >
-      <span>✦</span>
-      <h3>Todo</h3>
-    </div>
+                          <div className="categories">
+                              <div
+                                  className="category"
+                                  onClick={() => setSelectedCategory('all')}
+                                  style={{
+                                      cursor: 'pointer',
+                                      border: selectedCategory === 'all'
+                                          ? '2px solid #58c7ff'
+                                          : undefined,
+                                  }}
+                              >
+                                  <span>✦</span>
+                                  <h3>Todo</h3>
+                              </div>
 
-    {categories.map((category) => (
-      <div
-        className="category"
-        key={category.id}
-        onClick={() => setSelectedCategory(category.id)}
-        style={{
-          cursor: 'pointer',
-          border: selectedCategory === category.id
-            ? '2px solid #58c7ff'
-            : undefined,
-        }}
-      >
-        <span>✦</span>
-        <h3>{category.name}</h3>
-      </div>
-    ))}
-  </div>
+                              {categories.map((category) => (
+                                  <div
+                                      className="category"
+                                      key={category.id}
+                                      onClick={() => setSelectedCategory(category.id)}
+                                      style={{
+                                          cursor: 'pointer',
+                                          border: selectedCategory === category.id
+                                              ? '2px solid #58c7ff'
+                                              : undefined,
+                                      }}
+                                  >
+                                      <span>✦</span>
+                                      <h3>{category.name}</h3>
+                                  </div>
+                              ))}
+                          </div>
 
-  <div style={{
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-    gap: '20px',
-    marginTop: '30px',
-  }}>
-    {audiovisualsLoading ? (
-      <p>Cargando catálogo...</p>
-    ) : filteredAudiovisuals.length === 0 ? (
-      <p style={{ gridColumn: '1 / -1', textAlign: 'center' }}>
-        {audiovisuals.length === 0
-          ? 'Próximamente añadiremos contenido a nuestro catálogo.'
-          : 'No encontramos resultados para tu búsqueda.'}
-      </p>
-    ) : (
-      filteredAudiovisuals.map((item) => (
-        <article
-          key={item.id}
-          style={{
-            background: '#10243b',
-            border: '1px solid #24517b',
-            borderRadius: '12px',
-            overflow: 'hidden',
-          }}
-        >
-          {item.cover_url ? (
-            <img
-              src={item.cover_url}
-              alt={item.title}
-              loading="lazy"
-              style={{
-                width: '100%',
-                aspectRatio: '2 / 3',
-                objectFit: 'cover',
-                display: 'block',
-              }}
-            />
-          ) : (
-            <div style={{
-              aspectRatio: '2 / 3',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: '#0b1c30',
-              color: '#58c7ff',
-              fontSize: '35px',
-            }}>
-              ✦
-            </div>
-          )}
+                          <div style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+                              gap: '20px',
+                              marginTop: '30px',
+                          }}>
+                              {audiovisualsLoading ? (
+                                  <p>Cargando catálogo...</p>
+                              ) : filteredAudiovisuals.length === 0 ? (
+                                  <p style={{ gridColumn: '1 / -1', textAlign: 'center' }}>
+                                      {audiovisuals.length === 0
+                                          ? 'Próximamente añadiremos contenido a nuestro catálogo.'
+                                          : 'No encontramos resultados para tu búsqueda.'}
+                                  </p>
+                              ) : (
+                                  filteredAudiovisuals.map((item) => (
+                                      <article
+                                          key={item.id}
+                                          style={{
+                                              background: '#10243b',
+                                              border: '1px solid #24517b',
+                                              borderRadius: '12px',
+                                              overflow: 'hidden',
+                                          }}
+                                      >
+                                          {item.cover_url ? (
+                                              <img
+                                                  src={item.cover_url}
+                                                  alt={item.title}
+                                                  loading="lazy"
+                                                  style={{
+                                                      width: '100%',
+                                                      aspectRatio: '2 / 3',
+                                                      objectFit: 'cover',
+                                                      display: 'block',
+                                                  }}
+                                              />
+                                          ) : (
+                                              <div style={{
+                                                  aspectRatio: '2 / 3',
+                                                  display: 'flex',
+                                                  alignItems: 'center',
+                                                  justifyContent: 'center',
+                                                  background: '#0b1c30',
+                                                  color: '#58c7ff',
+                                                  fontSize: '35px',
+                                              }}>
+                                                  ✦
+                                              </div>
+                                          )}
 
-          <div style={{ padding: '12px' }}>
-            {item.is_featured && (
-              <p style={{ color: '#58c7ff', fontSize: '12px' }}>
-                ★ DESTACADO
-              </p>
-            )}
+                                          <div style={{ padding: '12px' }}>
+                                              {item.is_featured && (
+                                                  <p style={{ color: '#58c7ff', fontSize: '12px' }}>
+                                                      ★ DESTACADO
+                                                  </p>
+                                              )}
 
-            <h3>{item.title}</h3>
+                                              <h3>{item.title}</h3>
 
-            <p style={{ color: '#a9bdd3', fontSize: '13px' }}>
-              {item.categories?.name || ''}
-              {item.release_year ? ` · ${item.release_year}` : ''}
-            </p>
+                                              <p style={{ color: '#a9bdd3', fontSize: '13px' }}>
+                                                  {item.categories?.name || ''}
+                                                  {item.release_year ? ` · ${item.release_year}` : ''}
+                                              </p>
 
-            {item.quality_notes && (
-              <p style={{ color: '#a9bdd3', fontSize: '12px' }}>
-                {item.quality_notes}
-              </p>
-            )}
-          </div>
-        </article>
-      ))
-    )}
-  </div>
-</section>
+                                              {item.quality_notes && (
+                                                  <p style={{ color: '#a9bdd3', fontSize: '12px' }}>
+                                                      {item.quality_notes}
+                                                  </p>
+                                              )}
+                                          </div>
+                                      </article>
+                                  ))
+                              )}
+                          </div>
+                      </section>
 
             {!currentUser && (
               <section style={{ textAlign: 'center', padding: '35px 15px' }}>
