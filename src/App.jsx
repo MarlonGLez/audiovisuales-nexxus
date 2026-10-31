@@ -7,6 +7,8 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [currentUser, setCurrentUser] = useState(null)
+  const [profile, setProfile] = useState(null)
+  const [activePage, setActivePage] = useState('home')
 
   const [form, setForm] = useState({
     fullName: '',
@@ -14,6 +16,11 @@ export default function App() {
     phone: '',
     password: '',
   })
+
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordMessage, setPasswordMessage] = useState('')
+  const [passwordLoading, setPasswordLoading] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -23,11 +30,40 @@ export default function App() {
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setCurrentUser(session?.user ?? null)
+        if (!session) {
+          setProfile(null)
+          setActivePage('home')
+        }
       }
     )
 
     return () => listener.subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    async function loadProfile() {
+      if (!currentUser) {
+        setProfile(null)
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('username, display_name, phone, client_code, created_at')
+        .eq('id', currentUser.id)
+        .single()
+
+      if (error) {
+        console.error('Error al cargar perfil:', error)
+        setMessage('No se pudieron cargar los datos de tu cuenta.')
+        return
+      }
+
+      setProfile(data)
+    }
+
+    loadProfile()
+  }, [currentUser])
 
   function updateField(event) {
     setForm({
@@ -65,6 +101,7 @@ export default function App() {
           })
 
         if (registerError) throw registerError
+
         if (!registerData?.success) {
           throw new Error(registerData?.error || 'No se pudo crear la cuenta')
         }
@@ -91,26 +128,66 @@ export default function App() {
 
       if (sessionError) throw sessionError
 
+      setModal('')
+      setActivePage('home')
       setMessage(
         modal === 'register'
           ? '¡Tu cuenta NEXXUS se creó correctamente!'
           : '¡Bienvenido nuevamente a NEXXUS!'
       )
-
-      setModal('')
     } catch (error) {
       console.error(error)
-      setMessage(
-        error.message || 'Ha ocurrido un error. Inténtalo nuevamente.'
-      )
+      setMessage(error.message || 'Ha ocurrido un error.')
     } finally {
       setLoading(false)
     }
   }
 
+  async function handlePasswordChange(event) {
+    event.preventDefault()
+    setPasswordMessage('')
+
+    if (newPassword.length < 8) {
+      setPasswordMessage('La contraseña debe tener al menos 8 caracteres.')
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage('Las contraseñas no coinciden.')
+      return
+    }
+
+    setPasswordLoading(true)
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      })
+
+      if (error) throw error
+
+      setPasswordMessage('¡Contraseña actualizada correctamente!')
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (error) {
+      console.error(error)
+      setPasswordMessage(error.message || 'No se pudo cambiar la contraseña.')
+    } finally {
+      setPasswordLoading(false)
+    }
+  }
+
   async function handleLogout() {
-    await supabase.auth.signOut()
+    const { error } = await supabase.auth.signOut()
+
+    if (error) {
+      setMessage('No se pudo cerrar la sesión.')
+      return
+    }
+
     setCurrentUser(null)
+    setProfile(null)
+    setActivePage('home')
     setMessage('Has cerrado sesión correctamente.')
   }
 
@@ -127,6 +204,15 @@ export default function App() {
     fontSize: '15px',
   }
 
+  const sectionStyle = {
+    maxWidth: '650px',
+    margin: '35px auto',
+    padding: '25px',
+    background: '#10243b',
+    border: '1px solid #24517b',
+    borderRadius: '16px',
+  }
+
   return (
     <div className="app">
       <header className="header">
@@ -135,9 +221,21 @@ export default function App() {
         </div>
 
         {currentUser ? (
-          <button className="login-btn" onClick={handleLogout}>
-            Cerrar sesión
-          </button>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <button
+              className="login-btn"
+              onClick={() => {
+                setActivePage('account')
+                setMessage('')
+              }}
+            >
+              Mi cuenta
+            </button>
+
+            <button className="login-btn" onClick={handleLogout}>
+              Salir
+            </button>
+          </div>
         ) : (
           <button className="login-btn" onClick={() => openModal('login')}>
             Iniciar sesión
@@ -146,78 +244,226 @@ export default function App() {
       </header>
 
       <main>
-        <section className="hero">
-          <p className="eyebrow">BIENVENIDO A TU TIENDA DIGITAL</p>
+        {activePage === 'home' ? (
+          <>
+            <section className="hero">
+              <p className="eyebrow">BIENVENIDO A TU TIENDA DIGITAL</p>
 
-          <h1>
-            AUDIOVISUALES <span>NEXXUS</span>
-          </h1>
+              <h1>
+                AUDIOVISUALES <span>NEXXUS</span>
+              </h1>
 
-          <p className="subtitle">
-            Tu entretenimiento, tecnología y contenido favorito
-            en un solo lugar.
-          </p>
+              <p className="subtitle">
+                Tu entretenimiento, tecnología y contenido favorito
+                en un solo lugar.
+              </p>
 
-          <button
-            className="explore-btn"
-            onClick={() =>
-              document.getElementById('catalogo')?.scrollIntoView({
-                behavior: 'smooth',
-              })
-            }
-          >
-            Explorar catálogo
-          </button>
-        </section>
+              <button
+                className="explore-btn"
+                onClick={() =>
+                  document.getElementById('catalogo')?.scrollIntoView({
+                    behavior: 'smooth',
+                  })
+                }
+              >
+                Explorar catálogo
+              </button>
+            </section>
 
-        {currentUser && (
-          <section style={{ textAlign: 'center', padding: '20px' }}>
-            <h2>¡Bienvenido a NEXXUS!</h2>
-            <p>Ya has iniciado sesión.</p>
-          </section>
-        )}
+            {currentUser && (
+              <section style={{ textAlign: 'center', padding: '20px' }}>
+                <h2>¡Bienvenido a NEXXUS!</h2>
+                <button
+                  className="explore-btn"
+                  style={{ marginTop: '15px' }}
+                  onClick={() => setActivePage('account')}
+                >
+                  Entrar a Mi cuenta
+                </button>
+              </section>
+            )}
 
-        {message && (
-          <p style={{ textAlign: 'center', color: '#58c7ff' }}>
-            {message}
-          </p>
-        )}
+            {message && (
+              <p style={{ textAlign: 'center', color: '#58c7ff', padding: '15px' }}>
+                {message}
+              </p>
+            )}
 
-        <section className="catalog" id="catalogo">
-          <h2>Explora nuestro catálogo</h2>
-          <p>Encuentra lo que estás buscando.</p>
+            <section className="catalog" id="catalogo">
+              <h2>Explora nuestro catálogo</h2>
+              <p>Encuentra lo que estás buscando.</p>
 
-          <div className="categories">
-            {[
-              'Películas',
-              'Animados',
-              'Series animadas',
-              'Anime',
-              'Documentales',
-              'Juegos',
-              'Doramas',
-              'Series',
-              'Reality',
-              'Miniseries',
-            ].map((category) => (
-              <div className="category" key={category}>
-                <span>✦</span>
-                <h3>{category}</h3>
+              <div className="categories">
+                {[
+                  'Películas',
+                  'Animados',
+                  'Series animadas',
+                  'Anime',
+                  'Documentales',
+                  'Juegos',
+                  'Doramas',
+                  'Series',
+                  'Reality',
+                  'Miniseries',
+                ].map((category) => (
+                  <div className="category" key={category}>
+                    <span>✦</span>
+                    <h3>{category}</h3>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </section>
+            </section>
 
-        {!currentUser && (
-          <section style={{ textAlign: 'center', padding: '35px 15px' }}>
-            <h2>Forma parte de NEXXUS</h2>
-            <p>Regístrate y comienza a realizar tus pedidos.</p>
+            {!currentUser && (
+              <section style={{ textAlign: 'center', padding: '35px 15px' }}>
+                <h2>Forma parte de NEXXUS</h2>
+                <p>Regístrate y comienza a realizar tus pedidos.</p>
+                <button
+                  className="explore-btn"
+                  onClick={() => openModal('register')}
+                >
+                  Crear mi cuenta
+                </button>
+              </section>
+            )}
+          </>
+        ) : (
+          <section style={sectionStyle}>
             <button
-              className="explore-btn"
-              onClick={() => openModal('register')}
+              className="login-btn"
+              onClick={() => setActivePage('home')}
             >
-              Crear mi cuenta
+              ← Volver a la tienda
             </button>
+
+            <h1 style={{ textAlign: 'center', margin: '25px 0', color: '#58c7ff' }}>
+              Mi cuenta NEXXUS
+            </h1>
+
+            {!profile ? (
+              <p style={{ textAlign: 'center' }}>
+                Cargando los datos de tu cuenta...
+              </p>
+            ) : (
+              <>
+                <div style={{
+                  textAlign: 'center',
+                  padding: '20px',
+                  background: '#0b1c30',
+                  borderRadius: '12px',
+                  marginBottom: '25px',
+                }}>
+                  <p style={{ color: '#a9bdd3' }}>Tu código de cliente</p>
+                  <h2 style={{ color: '#58c7ff', marginTop: '8px' }}>
+                    {profile.client_code || 'Pendiente'}
+                  </h2>
+                </div>
+
+                <h2 style={{ marginBottom: '20px' }}>Datos personales</h2>
+
+                <label>Nombre y apellidos</label>
+                <input
+                  style={inputStyle}
+                  value={profile.display_name || ''}
+                  disabled
+                />
+
+                <label>Nombre de usuario</label>
+                <input
+                  style={inputStyle}
+                  value={profile.username || ''}
+                  disabled
+                />
+
+                <label>Teléfono registrado</label>
+                <input
+                  style={inputStyle}
+                  value={profile.phone || ''}
+                  disabled
+                />
+
+                <label>Fecha de registro</label>
+                <input
+                  style={inputStyle}
+                  value={
+                    profile.created_at
+                      ? new Date(profile.created_at).toLocaleDateString()
+                      : ''
+                  }
+                  disabled
+                />
+
+                <div style={{
+                  borderTop: '1px solid #294563',
+                  marginTop: '25px',
+                  paddingTop: '25px',
+                }}>
+                  <h2 style={{ marginBottom: '10px' }}>Seguridad</h2>
+                  <p style={{ color: '#a9bdd3', marginBottom: '18px' }}>
+                    Cambia tu contraseña de acceso.
+                  </p>
+
+                  <form onSubmit={handlePasswordChange}>
+                    <label>Nueva contraseña</label>
+                    <input
+                      style={inputStyle}
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Mínimo 8 caracteres"
+                      minLength={8}
+                      required
+                    />
+
+                    <label>Confirmar nueva contraseña</label>
+                    <input
+                      style={inputStyle}
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repite la nueva contraseña"
+                      minLength={8}
+                      required
+                    />
+
+                    <button
+                      className="explore-btn"
+                      type="submit"
+                      disabled={passwordLoading}
+                      style={{ width: '100%' }}
+                    >
+                      {passwordLoading
+                        ? 'Actualizando...'
+                        : 'Cambiar contraseña'}
+                    </button>
+                  </form>
+
+                  {passwordMessage && (
+                    <p style={{
+                      color: passwordMessage.includes('correctamente')
+                        ? '#58d68d'
+                        : '#ff8585',
+                      marginTop: '15px',
+                      textAlign: 'center',
+                    }}>
+                      {passwordMessage}
+                    </p>
+                  )}
+                </div>
+
+                <div style={{
+                  borderTop: '1px solid #294563',
+                  marginTop: '25px',
+                  paddingTop: '25px',
+                  textAlign: 'center',
+                }}>
+                  <h2>Mis pedidos</h2>
+                  <p style={{ color: '#a9bdd3', marginTop: '10px' }}>
+                    Próximamente podrás consultar aquí tu historial de pedidos.
+                  </p>
+                </div>
+              </>
+            )}
           </section>
         )}
       </main>
