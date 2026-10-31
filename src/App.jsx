@@ -23,7 +23,13 @@ export default function App() {
   const [coverFile, setCoverFile] = useState(null)
   const [adminSaving, setAdminSaving] = useState(false)
   const [adminMessage, setAdminMessage] = useState('')
-
+  const [tmdbQuery, setTmdbQuery] = useState('')
+  const [tmdbType, setTmdbType] = useState('multi')
+  const [tmdbResults, setTmdbResults] = useState([])
+  const [tmdbLoading, setTmdbLoading] = useState(false)
+  const [tmdbDetailsLoading, setTmdbDetailsLoading] = useState(false)
+  const [tmdbMessage, setTmdbMessage] = useState('')
+  const [selectedTmdb, setSelectedTmdb] = useState(null)
   const [newItem, setNewItem] = useState({
     title: '',
     category_id: '',
@@ -33,7 +39,6 @@ export default function App() {
     file_size_gb: '',
     is_featured: false,
   })
-
   const [form, setForm] = useState({
     fullName: '',
     username: '',
@@ -336,7 +341,100 @@ export default function App() {
       setPasswordLoading(false)
     }
   }
+    // Buscar películas y series en TMDB
+  async function searchTmdb(event) {
+    event.preventDefault()
+    setTmdbLoading(true)
+    setTmdbMessage('')
+    setTmdbResults([])
+    setSelectedTmdb(null)
 
+    try {
+      if (!isAdmin) {
+        throw new Error('No tienes permisos de administrador.')
+      }
+
+      const { data, error } = await supabase.functions.invoke(
+        'nexxus-search-media',
+        {
+          body: {
+            action: 'search',
+            query: tmdbQuery.trim(),
+            type: tmdbType,
+            language: 'es-ES',
+          },
+        }
+      )
+
+      if (error) throw error
+      if (data?.error) throw new Error(data.error)
+
+      setTmdbResults(data?.results || [])
+
+      if (!data?.results?.length) {
+        setTmdbMessage('No encontramos resultados.')
+      }
+    } catch (error) {
+      console.error('Error buscando en TMDB:', error)
+      setTmdbMessage(error.message || 'Error al buscar.')
+    } finally {
+      setTmdbLoading(false)
+    }
+  }
+
+  // Obtener detalles completos de un resultado
+  async function selectTmdbResult(result) {
+    setTmdbDetailsLoading(true)
+    setTmdbMessage('Consultando información completa...')
+    setSelectedTmdb(null)
+
+    try {
+      const type = result.media_type
+
+      if (!['movie', 'tv'].includes(type)) {
+        throw new Error('Tipo de contenido no compatible.')
+      }
+
+      const { data, error } = await supabase.functions.invoke(
+        'nexxus-search-media',
+        {
+          body: {
+            action: 'details',
+            id: result.id,
+            type,
+            language: 'es-ES',
+          },
+        }
+      )
+
+      if (error) throw error
+      if (data?.error) throw new Error(data.error)
+
+      const posterUrl = data.poster_path
+        ? `https://image.tmdb.org/t/p/w500${data.poster_path}`
+        : ''
+
+      const year = data.release_date
+        ? data.release_date.substring(0, 4)
+        : ''
+
+      setSelectedTmdb(data)
+
+      setNewItem((previous) => ({
+        ...previous,
+        title: data.title || '',
+        description: data.overview || '',
+        release_year: year,
+      }))
+
+      setTmdbMessage('Información cargada. Revisa los datos antes de guardar.')
+    } catch (error) {
+      console.error('Error obteniendo detalles:', error)
+      setTmdbMessage(error.message || 'No se pudieron obtener los detalles.')
+    } finally {
+      setTmdbDetailsLoading(false)
+    }
+  }
   // Añadir audiovisual
   async function handleCreateAudiovisual(event) {
     event.preventDefault()
