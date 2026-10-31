@@ -48,24 +48,44 @@ export default function App() {
 
   const isAdmin = currentUser?.app_metadata?.role === 'superadmin'
 
-  // Cargar sesión y escuchar cambios de autenticación
+  // Inicialización segura de sesión
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    let mounted = true
+    let authEventReceived = false
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return
+
+      authEventReceived = true
+
+      console.log('Evento de autenticación:', event)
+      console.log('Sesión disponible:', !!session)
+
+      setCurrentUser(session?.user ?? null)
+
+      if (!session) {
+        setProfile(null)
+        setActivePage('home')
+      }
+    })
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted || authEventReceived) return
+
+      if (error) {
+        console.error('Error recuperando sesión:', error)
+        return
+      }
+
       setCurrentUser(data.session?.user ?? null)
     })
 
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setCurrentUser(session?.user ?? null)
-
-        if (!session) {
-          setProfile(null)
-          setActivePage('home')
-        }
-      }
-    )
-
-    return () => listener.subscription.unsubscribe()
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   // Cargar categorías
@@ -76,7 +96,9 @@ export default function App() {
 
       const { data, error } = await supabase
         .from('categories')
-        .select('id, name, slug, description, billing_unit, billing_unit_label, sort_order')
+        .select(
+          'id, name, slug, description, billing_unit, billing_unit_label, sort_order'
+        )
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
 
@@ -135,6 +157,8 @@ export default function App() {
 
   // Cargar perfil
   useEffect(() => {
+    let cancelled = false
+
     async function loadProfile() {
       if (!currentUser) {
         setProfile(null)
@@ -147,6 +171,8 @@ export default function App() {
         .eq('id', currentUser.id)
         .single()
 
+      if (cancelled) return
+
       if (error) {
         console.error('Error al cargar perfil:', error)
         setMessage('No se pudieron cargar los datos de tu cuenta.')
@@ -157,11 +183,15 @@ export default function App() {
     }
 
     loadProfile()
+
+    return () => {
+      cancelled = true
+    }
   }, [currentUser])
 
   // Filtrar catálogo
   const filteredAudiovisuals = audiovisuals.filter((item) => {
-    const matchesSearch = item.title
+    const matchesSearch = (item.title || '')
       .toLowerCase()
       .includes(searchTerm.toLowerCase())
 
@@ -173,20 +203,22 @@ export default function App() {
   })
 
   function updateField(event) {
-    setForm({
-      ...form,
+    setForm((previous) => ({
+      ...previous,
       [event.target.name]: event.target.value,
-    })
+    }))
   }
 
   function openModal(type) {
     setMessage('')
+
     setForm({
       fullName: '',
       username: '',
       phone: '',
       password: '',
     })
+
     setModal(type)
   }
 
@@ -211,7 +243,9 @@ export default function App() {
         if (registerError) throw registerError
 
         if (!registerData?.success) {
-          throw new Error(registerData?.error || 'No se pudo crear la cuenta')
+          throw new Error(
+            registerData?.error || 'No se pudo crear la cuenta'
+          )
         }
       }
 
@@ -226,25 +260,35 @@ export default function App() {
       if (loginError) throw loginError
 
       if (!loginData?.access_token || !loginData?.refresh_token) {
-        throw new Error(loginData?.error || 'No se pudo iniciar sesión')
+        throw new Error(
+          loginData?.error || 'No se pudo iniciar sesión'
+        )
       }
 
-      const { error: sessionError } = await supabase.auth.setSession({
-        access_token: loginData.access_token,
-        refresh_token: loginData.refresh_token,
-      })
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.setSession({
+          access_token: loginData.access_token,
+          refresh_token: loginData.refresh_token,
+        })
 
       if (sessionError) throw sessionError
 
+      if (!sessionData.session) {
+        throw new Error('Supabase no pudo establecer la sesión.')
+      }
+
+      setCurrentUser(sessionData.session.user)
+      setProfile(null)
       setModal('')
       setActivePage('home')
+
       setMessage(
         modal === 'register'
           ? '¡Tu cuenta NEXXUS se creó correctamente!'
           : '¡Bienvenido nuevamente a NEXXUS!'
       )
     } catch (error) {
-      console.error(error)
+      console.error('Error de autenticación:', error)
       setMessage(error.message || 'Ha ocurrido un error.')
     } finally {
       setLoading(false)
@@ -257,7 +301,9 @@ export default function App() {
     setPasswordMessage('')
 
     if (newPassword.length < 8) {
-      setPasswordMessage('La contraseña debe tener al menos 8 caracteres.')
+      setPasswordMessage(
+        'La contraseña debe tener al menos 8 caracteres.'
+      )
       return
     }
 
@@ -275,12 +321,17 @@ export default function App() {
 
       if (error) throw error
 
-      setPasswordMessage('¡Contraseña actualizada correctamente!')
+      setPasswordMessage(
+        '¡Contraseña actualizada correctamente!'
+      )
+
       setNewPassword('')
       setConfirmPassword('')
     } catch (error) {
       console.error(error)
-      setPasswordMessage(error.message || 'No se pudo cambiar la contraseña.')
+      setPasswordMessage(
+        error.message || 'No se pudo cambiar la contraseña.'
+      )
     } finally {
       setPasswordLoading(false)
     }
@@ -300,22 +351,33 @@ export default function App() {
       }
 
       if (!newItem.title.trim() || !newItem.category_id) {
-        throw new Error('Debes indicar el título y la categoría.')
+        throw new Error(
+          'Debes indicar el título y la categoría.'
+        )
       }
 
       let coverUrl = null
 
       if (coverFile) {
         if (!coverFile.type.startsWith('image/')) {
-          throw new Error('El archivo seleccionado no es una imagen.')
+          throw new Error(
+            'El archivo seleccionado no es una imagen.'
+          )
         }
 
         if (coverFile.size > 5 * 1024 * 1024) {
-          throw new Error('La portada no puede superar los 5 MB.')
+          throw new Error(
+            'La portada no puede superar los 5 MB.'
+          )
         }
 
-        const extension = coverFile.name.split('.').pop().toLowerCase()
+        const extension = coverFile.name
+          .split('.')
+          .pop()
+          .toLowerCase()
+
         const fileName = `${crypto.randomUUID()}.${extension}`
+
         uploadedPath = `portadas/${fileName}`
 
         const { error: uploadError } = await supabase.storage
@@ -354,7 +416,9 @@ export default function App() {
 
       if (insertError) throw insertError
 
-      setAdminMessage('¡Contenido añadido correctamente!')
+      setAdminMessage(
+        '¡Contenido añadido correctamente!'
+      )
 
       setNewItem({
         title: '',
@@ -369,21 +433,29 @@ export default function App() {
       setCoverFile(null)
 
       const fileInput = document.getElementById('admin-cover')
+
       if (fileInput) fileInput.value = ''
 
       await loadAudiovisuals()
     } catch (error) {
       console.error('Error al guardar contenido:', error)
 
-      // Si falló el registro después de subir la portada,
-      // intentar retirar el archivo que quedó sin utilizar.
       if (uploadedPath) {
-        await supabase.storage
+        const { error: removeError } = await supabase.storage
           .from('covers')
           .remove([uploadedPath])
+
+        if (removeError) {
+          console.error(
+            'No se pudo eliminar la portada temporal:',
+            removeError
+          )
+        }
       }
 
-      setAdminMessage(error.message || 'No se pudo guardar el contenido.')
+      setAdminMessage(
+        error.message || 'No se pudo guardar el contenido.'
+      )
     } finally {
       setAdminSaving(false)
     }
@@ -434,7 +506,13 @@ export default function App() {
         </div>
 
         {currentUser ? (
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: '10px',
+              flexWrap: 'wrap',
+            }}
+          >
             {isAdmin && (
               <button
                 className="login-btn"
@@ -457,12 +535,18 @@ export default function App() {
               Mi cuenta
             </button>
 
-            <button className="login-btn" onClick={handleLogout}>
+            <button
+              className="login-btn"
+              onClick={handleLogout}
+            >
               Salir
             </button>
           </div>
         ) : (
-          <button className="login-btn" onClick={() => openModal('login')}>
+          <button
+            className="login-btn"
+            onClick={() => openModal('login')}
+          >
             Iniciar sesión
           </button>
         )}
@@ -472,7 +556,9 @@ export default function App() {
         {activePage === 'home' ? (
           <>
             <section className="hero">
-              <p className="eyebrow">BIENVENIDO A TU TIENDA DIGITAL</p>
+              <p className="eyebrow">
+                BIENVENIDO A TU TIENDA DIGITAL
+              </p>
 
               <h1>
                 AUDIOVISUALES <span>NEXXUS</span>
@@ -496,8 +582,14 @@ export default function App() {
             </section>
 
             {currentUser && (
-              <section style={{ textAlign: 'center', padding: '20px' }}>
+              <section
+                style={{
+                  textAlign: 'center',
+                  padding: '20px',
+                }}
+              >
                 <h2>¡Bienvenido a NEXXUS!</h2>
+
                 <button
                   className="explore-btn"
                   style={{ marginTop: '15px' }}
@@ -509,7 +601,13 @@ export default function App() {
             )}
 
             {message && (
-              <p style={{ textAlign: 'center', color: '#58c7ff', padding: '15px' }}>
+              <p
+                style={{
+                  textAlign: 'center',
+                  color: '#58c7ff',
+                  padding: '15px',
+                }}
+              >
                 {message}
               </p>
             )}
@@ -548,9 +646,10 @@ export default function App() {
                     onClick={() => setSelectedCategory('all')}
                     style={{
                       cursor: 'pointer',
-                      border: selectedCategory === 'all'
-                        ? '2px solid #58c7ff'
-                        : undefined,
+                      border:
+                        selectedCategory === 'all'
+                          ? '2px solid #58c7ff'
+                          : undefined,
                     }}
                   >
                     <span>✦</span>
@@ -561,12 +660,15 @@ export default function App() {
                     <div
                       className="category"
                       key={category.id}
-                      onClick={() => setSelectedCategory(category.id)}
+                      onClick={() =>
+                        setSelectedCategory(category.id)
+                      }
                       style={{
                         cursor: 'pointer',
-                        border: selectedCategory === category.id
-                          ? '2px solid #58c7ff'
-                          : undefined,
+                        border:
+                          selectedCategory === category.id
+                            ? '2px solid #58c7ff'
+                            : undefined,
                       }}
                     >
                       <span>✦</span>
@@ -576,16 +678,24 @@ export default function App() {
                 </div>
               )}
 
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-                gap: '20px',
-                marginTop: '30px',
-              }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns:
+                    'repeat(auto-fill, minmax(160px, 1fr))',
+                  gap: '20px',
+                  marginTop: '30px',
+                }}
+              >
                 {audiovisualsLoading ? (
                   <p>Cargando catálogo...</p>
                 ) : filteredAudiovisuals.length === 0 ? (
-                  <p style={{ gridColumn: '1 / -1', textAlign: 'center' }}>
+                  <p
+                    style={{
+                      gridColumn: '1 / -1',
+                      textAlign: 'center',
+                    }}
+                  >
                     {audiovisuals.length === 0
                       ? 'Próximamente añadiremos contenido a nuestro catálogo.'
                       : 'No encontramos resultados para tu búsqueda.'}
@@ -614,35 +724,54 @@ export default function App() {
                           }}
                         />
                       ) : (
-                        <div style={{
-                          aspectRatio: '2 / 3',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          background: '#0b1c30',
-                          color: '#58c7ff',
-                          fontSize: '35px',
-                        }}>
+                        <div
+                          style={{
+                            aspectRatio: '2 / 3',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: '#0b1c30',
+                            color: '#58c7ff',
+                            fontSize: '35px',
+                          }}
+                        >
                           ✦
                         </div>
                       )}
 
                       <div style={{ padding: '12px' }}>
                         {item.is_featured && (
-                          <p style={{ color: '#58c7ff', fontSize: '12px' }}>
+                          <p
+                            style={{
+                              color: '#58c7ff',
+                              fontSize: '12px',
+                            }}
+                          >
                             ★ DESTACADO
                           </p>
                         )}
 
                         <h3>{item.title}</h3>
 
-                        <p style={{ color: '#a9bdd3', fontSize: '13px' }}>
+                        <p
+                          style={{
+                            color: '#a9bdd3',
+                            fontSize: '13px',
+                          }}
+                        >
                           {item.categories?.name || ''}
-                          {item.release_year ? ` · ${item.release_year}` : ''}
+                          {item.release_year
+                            ? ` · ${item.release_year}`
+                            : ''}
                         </p>
 
                         {item.quality_notes && (
-                          <p style={{ color: '#a9bdd3', fontSize: '12px' }}>
+                          <p
+                            style={{
+                              color: '#a9bdd3',
+                              fontSize: '12px',
+                            }}
+                          >
                             {item.quality_notes}
                           </p>
                         )}
@@ -654,9 +783,17 @@ export default function App() {
             </section>
 
             {!currentUser && (
-              <section style={{ textAlign: 'center', padding: '35px 15px' }}>
+              <section
+                style={{
+                  textAlign: 'center',
+                  padding: '35px 15px',
+                }}
+              >
                 <h2>Forma parte de NEXXUS</h2>
-                <p>Regístrate y comienza a realizar tus pedidos.</p>
+                <p>
+                  Regístrate y comienza a realizar tus pedidos.
+                </p>
+
                 <button
                   className="explore-btn"
                   onClick={() => openModal('register')}
@@ -675,11 +812,13 @@ export default function App() {
               ← Volver a la tienda
             </button>
 
-            <h1 style={{
-              color: '#58c7ff',
-              textAlign: 'center',
-              margin: '25px 0',
-            }}>
+            <h1
+              style={{
+                color: '#58c7ff',
+                textAlign: 'center',
+                margin: '25px 0',
+              }}
+            >
               Panel de administración
             </h1>
 
@@ -693,17 +832,22 @@ export default function App() {
 
                 <form onSubmit={handleCreateAudiovisual}>
                   <label>Nombre del contenido</label>
+
                   <input
                     style={inputStyle}
                     value={newItem.title}
                     onChange={(e) =>
-                      setNewItem({ ...newItem, title: e.target.value })
+                      setNewItem({
+                        ...newItem,
+                        title: e.target.value,
+                      })
                     }
                     placeholder="Ejemplo: Avatar"
                     required
                   />
 
                   <label>Categoría</label>
+
                   <select
                     style={inputStyle}
                     value={newItem.category_id}
@@ -715,17 +859,27 @@ export default function App() {
                     }
                     required
                   >
-                    <option value="">Seleccionar categoría</option>
+                    <option value="">
+                      Seleccionar categoría
+                    </option>
+
                     {categories.map((category) => (
-                      <option key={category.id} value={category.id}>
+                      <option
+                        key={category.id}
+                        value={category.id}
+                      >
                         {category.name}
                       </option>
                     ))}
                   </select>
 
                   <label>Descripción</label>
+
                   <textarea
-                    style={{ ...inputStyle, minHeight: '90px' }}
+                    style={{
+                      ...inputStyle,
+                      minHeight: '90px',
+                    }}
                     value={newItem.description}
                     onChange={(e) =>
                       setNewItem({
@@ -737,6 +891,7 @@ export default function App() {
                   />
 
                   <label>Portada</label>
+
                   <input
                     id="admin-cover"
                     style={inputStyle}
@@ -748,12 +903,18 @@ export default function App() {
                   />
 
                   {coverFile && (
-                    <p style={{ color: '#58c7ff', marginBottom: '15px' }}>
+                    <p
+                      style={{
+                        color: '#58c7ff',
+                        marginBottom: '15px',
+                      }}
+                    >
                       Imagen seleccionada: {coverFile.name}
                     </p>
                   )}
 
                   <label>Año de lanzamiento</label>
+
                   <input
                     style={inputStyle}
                     type="number"
@@ -770,6 +931,7 @@ export default function App() {
                   />
 
                   <label>Calidad</label>
+
                   <input
                     style={inputStyle}
                     value={newItem.quality_notes}
@@ -783,6 +945,7 @@ export default function App() {
                   />
 
                   <label>Tamaño en GB</label>
+
                   <input
                     style={inputStyle}
                     type="number"
@@ -798,12 +961,14 @@ export default function App() {
                     placeholder="Ejemplo: 2.5"
                   />
 
-                  <label style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    margin: '15px 0',
-                  }}>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      margin: '15px 0',
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={newItem.is_featured}
@@ -823,18 +988,22 @@ export default function App() {
                     disabled={adminSaving}
                     style={{ width: '100%' }}
                   >
-                    {adminSaving ? 'Guardando contenido...' : 'Guardar contenido'}
+                    {adminSaving
+                      ? 'Guardando contenido...'
+                      : 'Guardar contenido'}
                   </button>
                 </form>
 
                 {adminMessage && (
-                  <p style={{
-                    marginTop: '20px',
-                    textAlign: 'center',
-                    color: adminMessage.includes('correctamente')
-                      ? '#58d68d'
-                      : '#ff8585',
-                  }}>
+                  <p
+                    style={{
+                      marginTop: '20px',
+                      textAlign: 'center',
+                      color: adminMessage.includes('correctamente')
+                        ? '#58d68d'
+                        : '#ff8585',
+                    }}
+                  >
                     {adminMessage}
                   </p>
                 )}
@@ -850,11 +1019,13 @@ export default function App() {
               ← Volver a la tienda
             </button>
 
-            <h1 style={{
-              textAlign: 'center',
-              margin: '25px 0',
-              color: '#58c7ff',
-            }}>
+            <h1
+              style={{
+                textAlign: 'center',
+                margin: '25px 0',
+                color: '#58c7ff',
+              }}
+            >
               Mi cuenta NEXXUS
             </h1>
 
@@ -864,22 +1035,35 @@ export default function App() {
               </p>
             ) : (
               <>
-                <div style={{
-                  textAlign: 'center',
-                  padding: '20px',
-                  background: '#0b1c30',
-                  borderRadius: '12px',
-                  marginBottom: '25px',
-                }}>
-                  <p style={{ color: '#a9bdd3' }}>Tu código de cliente</p>
-                  <h2 style={{ color: '#58c7ff', marginTop: '8px' }}>
+                <div
+                  style={{
+                    textAlign: 'center',
+                    padding: '20px',
+                    background: '#0b1c30',
+                    borderRadius: '12px',
+                    marginBottom: '25px',
+                  }}
+                >
+                  <p style={{ color: '#a9bdd3' }}>
+                    Tu código de cliente
+                  </p>
+
+                  <h2
+                    style={{
+                      color: '#58c7ff',
+                      marginTop: '8px',
+                    }}
+                  >
                     {profile.client_code || 'Pendiente'}
                   </h2>
                 </div>
 
-                <h2 style={{ marginBottom: '20px' }}>Datos personales</h2>
+                <h2 style={{ marginBottom: '20px' }}>
+                  Datos personales
+                </h2>
 
                 <label>Nombre y apellidos</label>
+
                 <input
                   style={inputStyle}
                   value={profile.display_name || ''}
@@ -887,6 +1071,7 @@ export default function App() {
                 />
 
                 <label>Nombre de usuario</label>
+
                 <input
                   style={inputStyle}
                   value={profile.username || ''}
@@ -894,6 +1079,7 @@ export default function App() {
                 />
 
                 <label>Teléfono registrado</label>
+
                 <input
                   style={inputStyle}
                   value={profile.phone || ''}
@@ -901,44 +1087,63 @@ export default function App() {
                 />
 
                 <label>Fecha de registro</label>
+
                 <input
                   style={inputStyle}
                   value={
                     profile.created_at
-                      ? new Date(profile.created_at).toLocaleDateString()
+                      ? new Date(
+                          profile.created_at
+                        ).toLocaleDateString()
                       : ''
                   }
                   disabled
                 />
 
-                <div style={{
-                  borderTop: '1px solid #294563',
-                  marginTop: '25px',
-                  paddingTop: '25px',
-                }}>
-                  <h2 style={{ marginBottom: '10px' }}>Seguridad</h2>
-                  <p style={{ color: '#a9bdd3', marginBottom: '18px' }}>
+                <div
+                  style={{
+                    borderTop: '1px solid #294563',
+                    marginTop: '25px',
+                    paddingTop: '25px',
+                  }}
+                >
+                  <h2 style={{ marginBottom: '10px' }}>
+                    Seguridad
+                  </h2>
+
+                  <p
+                    style={{
+                      color: '#a9bdd3',
+                      marginBottom: '18px',
+                    }}
+                  >
                     Cambia tu contraseña de acceso.
                   </p>
 
                   <form onSubmit={handlePasswordChange}>
                     <label>Nueva contraseña</label>
+
                     <input
                       style={inputStyle}
                       type="password"
                       value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
+                      onChange={(e) =>
+                        setNewPassword(e.target.value)
+                      }
                       placeholder="Mínimo 8 caracteres"
                       minLength={8}
                       required
                     />
 
                     <label>Confirmar nueva contraseña</label>
+
                     <input
                       style={inputStyle}
                       type="password"
                       value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      onChange={(e) =>
+                        setConfirmPassword(e.target.value)
+                      }
                       placeholder="Repite la nueva contraseña"
                       minLength={8}
                       required
@@ -957,27 +1162,40 @@ export default function App() {
                   </form>
 
                   {passwordMessage && (
-                    <p style={{
-                      color: passwordMessage.includes('correctamente')
-                        ? '#58d68d'
-                        : '#ff8585',
-                      marginTop: '15px',
-                      textAlign: 'center',
-                    }}>
+                    <p
+                      style={{
+                        color: passwordMessage.includes(
+                          'correctamente'
+                        )
+                          ? '#58d68d'
+                          : '#ff8585',
+                        marginTop: '15px',
+                        textAlign: 'center',
+                      }}
+                    >
                       {passwordMessage}
                     </p>
                   )}
                 </div>
 
-                <div style={{
-                  borderTop: '1px solid #294563',
-                  marginTop: '25px',
-                  paddingTop: '25px',
-                  textAlign: 'center',
-                }}>
+                <div
+                  style={{
+                    borderTop: '1px solid #294563',
+                    marginTop: '25px',
+                    paddingTop: '25px',
+                    textAlign: 'center',
+                  }}
+                >
                   <h2>Mis pedidos</h2>
-                  <p style={{ color: '#a9bdd3', marginTop: '10px' }}>
-                    Próximamente podrás consultar aquí tu historial de pedidos.
+
+                  <p
+                    style={{
+                      color: '#a9bdd3',
+                      marginTop: '10px',
+                    }}
+                  >
+                    Próximamente podrás consultar aquí tu
+                    historial de pedidos.
                   </p>
                 </div>
               </>
@@ -1020,14 +1238,22 @@ export default function App() {
               color: 'white',
             }}
           >
-            <h2 style={{ color: '#58c7ff', textAlign: 'center' }}>
-              {modal === 'register' ? 'Crear cuenta NEXXUS' : 'Iniciar sesión'}
+            <h2
+              style={{
+                color: '#58c7ff',
+                textAlign: 'center',
+              }}
+            >
+              {modal === 'register'
+                ? 'Crear cuenta NEXXUS'
+                : 'Iniciar sesión'}
             </h2>
 
             <form onSubmit={handleSubmit}>
               {modal === 'register' && (
                 <>
                   <label>Nombre y apellidos</label>
+
                   <input
                     style={inputStyle}
                     name="fullName"
@@ -1038,6 +1264,7 @@ export default function App() {
                   />
 
                   <label>Nombre de usuario</label>
+
                   <input
                     style={inputStyle}
                     name="username"
@@ -1052,6 +1279,7 @@ export default function App() {
               )}
 
               <label>Teléfono internacional</label>
+
               <input
                 style={inputStyle}
                 name="phone"
@@ -1063,6 +1291,7 @@ export default function App() {
               />
 
               <label>Contraseña</label>
+
               <input
                 style={inputStyle}
                 name="password"
@@ -1078,7 +1307,10 @@ export default function App() {
                 type="submit"
                 className="explore-btn"
                 disabled={loading}
-                style={{ width: '100%', marginTop: '10px' }}
+                style={{
+                  width: '100%',
+                  marginTop: '10px',
+                }}
               >
                 {loading
                   ? 'Procesando...'
@@ -1088,7 +1320,12 @@ export default function App() {
               </button>
             </form>
 
-            <p style={{ textAlign: 'center', marginTop: '20px' }}>
+            <p
+              style={{
+                textAlign: 'center',
+                marginTop: '20px',
+              }}
+            >
               {modal === 'register'
                 ? '¿Ya tienes cuenta?'
                 : '¿Todavía no tienes cuenta?'}
@@ -1096,7 +1333,9 @@ export default function App() {
 
             <button
               onClick={() =>
-                openModal(modal === 'register' ? 'login' : 'register')
+                openModal(
+                  modal === 'register' ? 'login' : 'register'
+                )
               }
               style={{
                 display: 'block',
@@ -1108,7 +1347,9 @@ export default function App() {
                 fontSize: '15px',
               }}
             >
-              {modal === 'register' ? 'Iniciar sesión' : 'Crear una cuenta'}
+              {modal === 'register'
+                ? 'Iniciar sesión'
+                : 'Crear una cuenta'}
             </button>
 
             <button
