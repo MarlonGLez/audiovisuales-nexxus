@@ -23,6 +23,8 @@ export default function App() {
   const [coverFile, setCoverFile] = useState(null)
   const [adminSaving, setAdminSaving] = useState(false)
   const [adminMessage, setAdminMessage] = useState('')
+
+  // Integración TMDB
   const [tmdbQuery, setTmdbQuery] = useState('')
   const [tmdbType, setTmdbType] = useState('multi')
   const [tmdbResults, setTmdbResults] = useState([])
@@ -30,6 +32,7 @@ export default function App() {
   const [tmdbDetailsLoading, setTmdbDetailsLoading] = useState(false)
   const [tmdbMessage, setTmdbMessage] = useState('')
   const [selectedTmdb, setSelectedTmdb] = useState(null)
+
   const [newItem, setNewItem] = useState({
     title: '',
     category_id: '',
@@ -39,6 +42,7 @@ export default function App() {
     file_size_gb: '',
     is_featured: false,
   })
+
   const [form, setForm] = useState({
     fullName: '',
     username: '',
@@ -341,9 +345,16 @@ export default function App() {
       setPasswordLoading(false)
     }
   }
-    // Buscar películas y series en TMDB
+
+  // Buscar películas y series en TMDB
   async function searchTmdb(event) {
     event.preventDefault()
+
+    if (!tmdbQuery.trim()) {
+      setTmdbMessage('Escribe el nombre de una película o serie.')
+      return
+    }
+
     setTmdbLoading(true)
     setTmdbMessage('')
     setTmdbResults([])
@@ -410,31 +421,37 @@ export default function App() {
       if (error) throw error
       if (data?.error) throw new Error(data.error)
 
-      const posterUrl = data.poster_path
-        ? `https://image.tmdb.org/t/p/w500${data.poster_path}`
-        : ''
-
       const year = data.release_date
         ? data.release_date.substring(0, 4)
-        : ''
+        : data.first_air_date
+          ? data.first_air_date.substring(0, 4)
+          : ''
 
-      setSelectedTmdb(data)
+      setSelectedTmdb({
+        ...data,
+        media_type: type,
+      })
 
       setNewItem((previous) => ({
         ...previous,
-        title: data.title || '',
+        title: data.title || data.name || '',
         description: data.overview || '',
         release_year: year,
       }))
 
-      setTmdbMessage('Información cargada. Revisa los datos antes de guardar.')
+      setTmdbMessage(
+        'Información cargada. Revisa los datos antes de guardar.'
+      )
     } catch (error) {
       console.error('Error obteniendo detalles:', error)
-      setTmdbMessage(error.message || 'No se pudieron obtener los detalles.')
+      setTmdbMessage(
+        error.message || 'No se pudieron obtener los detalles.'
+      )
     } finally {
       setTmdbDetailsLoading(false)
     }
   }
+
   // Añadir audiovisual
   async function handleCreateAudiovisual(event) {
     event.preventDefault()
@@ -454,8 +471,12 @@ export default function App() {
         )
       }
 
-      let coverUrl = null
+      // Usar la portada de TMDB si no se seleccionó una manualmente
+      let coverUrl = selectedTmdb?.poster_path
+        ? `https://image.tmdb.org/t/p/w500${selectedTmdb.poster_path}`
+        : null
 
+      // Si se selecciona una imagen manual, tiene prioridad
       if (coverFile) {
         if (!coverFile.type.startsWith('image/')) {
           throw new Error(
@@ -493,6 +514,32 @@ export default function App() {
         coverUrl = publicUrlData.publicUrl
       }
 
+      // Información adicional procedente de TMDB
+      const metadata = selectedTmdb
+        ? {
+            tmdb_id: selectedTmdb.id,
+            tmdb_type: selectedTmdb.media_type,
+            original_title:
+              selectedTmdb.original_title ||
+              selectedTmdb.original_name ||
+              null,
+            backdrop_path: selectedTmdb.backdrop_path || null,
+            vote_average: selectedTmdb.vote_average ?? null,
+            genres: selectedTmdb.genres || [],
+            runtime: selectedTmdb.runtime ?? null,
+            episode_run_time:
+              selectedTmdb.episode_run_time || [],
+            number_of_seasons:
+              selectedTmdb.number_of_seasons ?? null,
+            number_of_episodes:
+              selectedTmdb.number_of_episodes ?? null,
+            cast: selectedTmdb.credits?.cast || [],
+            crew: selectedTmdb.credits?.crew || [],
+            trailer: selectedTmdb.trailer || null,
+            videos: selectedTmdb.videos || [],
+          }
+        : {}
+
       const { error: insertError } = await supabase
         .from('audiovisuals')
         .insert({
@@ -500,6 +547,7 @@ export default function App() {
           category_id: newItem.category_id,
           description: newItem.description.trim() || null,
           cover_url: coverUrl,
+          metadata,
           release_year: newItem.release_year
             ? Number(newItem.release_year)
             : null,
@@ -529,6 +577,10 @@ export default function App() {
       })
 
       setCoverFile(null)
+      setSelectedTmdb(null)
+      setTmdbResults([])
+      setTmdbQuery('')
+      setTmdbMessage('')
 
       const fileInput = document.getElementById('admin-cover')
 
@@ -928,6 +980,300 @@ export default function App() {
                   Añadir nuevo contenido
                 </h2>
 
+                {/* BUSCADOR TMDB */}
+                <section
+                  style={{
+                    padding: '18px',
+                    marginBottom: '24px',
+                    border: '1px solid #24517b',
+                    borderRadius: '12px',
+                    background: '#0b1c30',
+                  }}
+                >
+                  <h3
+                    style={{
+                      color: '#58c7ff',
+                      marginTop: 0,
+                    }}
+                  >
+                    Buscar información automáticamente en TMDB
+                  </h3>
+
+                  <p
+                    style={{
+                      color: '#a9bdd3',
+                      fontSize: '13px',
+                    }}
+                  >
+                    Busca una película o serie para cargar su portada,
+                    descripción, año, reparto y tráiler. Después podrás
+                    revisar y editar los datos antes de guardarlos.
+                  </p>
+
+                  <form
+                    onSubmit={searchTmdb}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns:
+                        'minmax(0, 1fr) 145px auto',
+                      gap: '8px',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <input
+                      style={{
+                        ...inputStyle,
+                        margin: 0,
+                      }}
+                      value={tmdbQuery}
+                      onChange={(e) => setTmdbQuery(e.target.value)}
+                      placeholder="Ejemplo: Avatar"
+                      required
+                    />
+
+                    <select
+                      style={{
+                        ...inputStyle,
+                        margin: 0,
+                      }}
+                      value={tmdbType}
+                      onChange={(e) => setTmdbType(e.target.value)}
+                    >
+                      <option value="multi">
+                        Películas y series
+                      </option>
+                      <option value="movie">Películas</option>
+                      <option value="tv">Series</option>
+                    </select>
+
+                    <button
+                      className="explore-btn"
+                      type="submit"
+                      disabled={tmdbLoading || !tmdbQuery.trim()}
+                    >
+                      {tmdbLoading ? 'Buscando...' : 'Buscar'}
+                    </button>
+                  </form>
+
+                  {tmdbMessage && (
+                    <p
+                      style={{
+                        color:
+                          tmdbMessage.includes('Información cargada')
+                            ? '#58d68d'
+                            : '#ffb3b3',
+                        marginTop: '12px',
+                      }}
+                    >
+                      {tmdbMessage}
+                    </p>
+                  )}
+
+                  {/* RESULTADOS */}
+                  {tmdbResults.length > 0 && (
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns:
+                          'repeat(auto-fill, minmax(125px, 1fr))',
+                        gap: '12px',
+                        marginTop: '16px',
+                      }}
+                    >
+                      {tmdbResults.map((result) => {
+                        const resultTitle =
+                          result.title || result.name || 'Sin título'
+
+                        const resultYear = (
+                          result.release_date ||
+                          result.first_air_date ||
+                          ''
+                        ).slice(0, 4)
+
+                        const resultType =
+                          result.media_type ||
+                          (tmdbType === 'tv'
+                            ? 'tv'
+                            : tmdbType === 'movie'
+                              ? 'movie'
+                              : '')
+
+                        const resultPoster = result.poster_path
+                          ? `https://image.tmdb.org/t/p/w342${result.poster_path}`
+                          : null
+
+                        return (
+                          <button
+                            key={`${resultType}-${result.id}`}
+                            type="button"
+                            onClick={() =>
+                              selectTmdbResult({
+                                ...result,
+                                media_type: resultType,
+                              })
+                            }
+                            disabled={tmdbDetailsLoading}
+                            style={{
+                              padding: '8px',
+                              border: '1px solid #294563',
+                              borderRadius: '10px',
+                              background: '#10243b',
+                              color: 'white',
+                              textAlign: 'left',
+                              cursor: 'pointer',
+                              opacity: tmdbDetailsLoading ? 0.65 : 1,
+                            }}
+                          >
+                            {resultPoster ? (
+                              <img
+                                src={resultPoster}
+                                alt={resultTitle}
+                                loading="lazy"
+                                style={{
+                                  width: '100%',
+                                  aspectRatio: '2 / 3',
+                                  objectFit: 'cover',
+                                  borderRadius: '7px',
+                                }}
+                              />
+                            ) : (
+                              <div
+                                style={{
+                                  width: '100%',
+                                  aspectRatio: '2 / 3',
+                                  display: 'grid',
+                                  placeItems: 'center',
+                                  background: '#071525',
+                                  color: '#58c7ff',
+                                }}
+                              >
+                                Sin portada
+                              </div>
+                            )}
+
+                            <strong
+                              style={{
+                                display: 'block',
+                                marginTop: '7px',
+                              }}
+                            >
+                              {resultTitle}
+                            </strong>
+
+                            <small style={{ color: '#a9bdd3' }}>
+                              {resultType === 'tv'
+                                ? 'Serie'
+                                : 'Película'}
+                              {resultYear ? ` · ${resultYear}` : ''}
+                            </small>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {tmdbDetailsLoading && (
+                    <p style={{ color: '#58c7ff' }}>
+                      Cargando detalles completos...
+                    </p>
+                  )}
+
+                  {/* VISTA PREVIA */}
+                  {selectedTmdb && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: '15px',
+                        flexWrap: 'wrap',
+                        marginTop: '18px',
+                        paddingTop: '16px',
+                        borderTop: '1px solid #294563',
+                      }}
+                    >
+                      {selectedTmdb.poster_path && (
+                        <img
+                          src={`https://image.tmdb.org/t/p/w342${selectedTmdb.poster_path}`}
+                          alt={
+                            selectedTmdb.title ||
+                            selectedTmdb.name ||
+                            'Portada'
+                          }
+                          style={{
+                            width: '105px',
+                            height: '158px',
+                            objectFit: 'cover',
+                            borderRadius: '8px',
+                          }}
+                        />
+                      )}
+
+                      <div style={{ flex: '1 1 220px' }}>
+                        <strong style={{ color: '#58d68d' }}>
+                          Información seleccionada
+                        </strong>
+
+                        <p
+                          style={{
+                            margin: '8px 0',
+                            color: '#a9bdd3',
+                          }}
+                        >
+                          {(selectedTmdb.genres || [])
+                            .map((genre) => genre.name)
+                            .join(', ')}
+                        </p>
+
+                        {selectedTmdb.runtime ? (
+                          <p>
+                            Duración: {selectedTmdb.runtime} minutos
+                          </p>
+                        ) : null}
+
+                        {selectedTmdb.episode_run_time?.length > 0 && (
+                          <p>
+                            Duración por episodio:{' '}
+                            {selectedTmdb.episode_run_time.join(', ')} minutos
+                          </p>
+                        )}
+
+                        {selectedTmdb.number_of_seasons && (
+                          <p>
+                            Temporadas: {selectedTmdb.number_of_seasons}
+                          </p>
+                        )}
+
+                        {selectedTmdb.number_of_episodes && (
+                          <p>
+                            Episodios: {selectedTmdb.number_of_episodes}
+                          </p>
+                        )}
+
+                        {selectedTmdb.credits?.cast?.length > 0 && (
+                          <p>
+                            Reparto:{' '}
+                            {selectedTmdb.credits.cast
+                              .slice(0, 8)
+                              .map((person) => person.name)
+                              .join(', ')}
+                          </p>
+                        )}
+
+                        {selectedTmdb.trailer?.url && (
+                          <a
+                            href={selectedTmdb.trailer.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ color: '#58c7ff' }}
+                          >
+                            Ver tráiler en YouTube
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </section>
+
+                {/* FORMULARIO PARA GUARDAR */}
                 <form onSubmit={handleCreateAudiovisual}>
                   <label>Nombre del contenido</label>
 
