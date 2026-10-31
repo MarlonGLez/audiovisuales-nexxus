@@ -19,6 +19,21 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('all')
 
+  // Administración
+  const [coverFile, setCoverFile] = useState(null)
+  const [adminSaving, setAdminSaving] = useState(false)
+  const [adminMessage, setAdminMessage] = useState('')
+
+  const [newItem, setNewItem] = useState({
+    title: '',
+    category_id: '',
+    description: '',
+    release_year: '',
+    quality_notes: '',
+    file_size_gb: '',
+    is_featured: false,
+  })
+
   const [form, setForm] = useState({
     fullName: '',
     username: '',
@@ -30,6 +45,8 @@ export default function App() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordMessage, setPasswordMessage] = useState('')
   const [passwordLoading, setPasswordLoading] = useState(false)
+
+  const isAdmin = currentUser?.app_metadata?.role === 'superadmin'
 
   // Cargar sesión y escuchar cambios de autenticación
   useEffect(() => {
@@ -78,45 +95,45 @@ export default function App() {
   }, [])
 
   // Cargar audiovisuales
-  useEffect(() => {
-    async function loadAudiovisuals() {
-      setAudiovisualsLoading(true)
+  async function loadAudiovisuals() {
+    setAudiovisualsLoading(true)
 
-      const { data, error } = await supabase
-        .from('audiovisuals')
-        .select(`
-          id,
-          title,
-          description,
-          cover_url,
-          release_year,
-          quality_notes,
-          file_size_gb,
-          is_featured,
-          category_id,
-          categories (
-            name,
-            slug
-          )
-        `)
-        .eq('is_active', true)
-        .order('is_featured', { ascending: false })
-        .order('title', { ascending: true })
+    const { data, error } = await supabase
+      .from('audiovisuals')
+      .select(`
+        id,
+        title,
+        description,
+        cover_url,
+        release_year,
+        quality_notes,
+        file_size_gb,
+        is_featured,
+        category_id,
+        categories (
+          name,
+          slug
+        )
+      `)
+      .eq('is_active', true)
+      .order('is_featured', { ascending: false })
+      .order('title', { ascending: true })
 
-      if (error) {
-        console.error('Error al cargar audiovisuales:', error)
-        setAudiovisuals([])
-      } else {
-        setAudiovisuals(data || [])
-      }
-
-      setAudiovisualsLoading(false)
+    if (error) {
+      console.error('Error al cargar audiovisuales:', error)
+      setAudiovisuals([])
+    } else {
+      setAudiovisuals(data || [])
     }
 
+    setAudiovisualsLoading(false)
+  }
+
+  useEffect(() => {
     loadAudiovisuals()
   }, [])
 
-  // Cargar perfil del usuario
+  // Cargar perfil
   useEffect(() => {
     async function loadProfile() {
       if (!currentUser) {
@@ -173,6 +190,7 @@ export default function App() {
     setModal(type)
   }
 
+  // Registro e inicio de sesión
   async function handleSubmit(event) {
     event.preventDefault()
     setLoading(true)
@@ -233,6 +251,7 @@ export default function App() {
     }
   }
 
+  // Cambiar contraseña
   async function handlePasswordChange(event) {
     event.preventDefault()
     setPasswordMessage('')
@@ -267,6 +286,110 @@ export default function App() {
     }
   }
 
+  // Añadir audiovisual
+  async function handleCreateAudiovisual(event) {
+    event.preventDefault()
+    setAdminSaving(true)
+    setAdminMessage('')
+
+    let uploadedPath = null
+
+    try {
+      if (!isAdmin) {
+        throw new Error('No tienes permisos de administrador.')
+      }
+
+      if (!newItem.title.trim() || !newItem.category_id) {
+        throw new Error('Debes indicar el título y la categoría.')
+      }
+
+      let coverUrl = null
+
+      if (coverFile) {
+        if (!coverFile.type.startsWith('image/')) {
+          throw new Error('El archivo seleccionado no es una imagen.')
+        }
+
+        if (coverFile.size > 5 * 1024 * 1024) {
+          throw new Error('La portada no puede superar los 5 MB.')
+        }
+
+        const extension = coverFile.name.split('.').pop().toLowerCase()
+        const fileName = `${crypto.randomUUID()}.${extension}`
+        uploadedPath = `portadas/${fileName}`
+
+        const { error: uploadError } = await supabase.storage
+          .from('covers')
+          .upload(uploadedPath, coverFile, {
+            upsert: false,
+          })
+
+        if (uploadError) throw uploadError
+
+        const { data: publicUrlData } = supabase.storage
+          .from('covers')
+          .getPublicUrl(uploadedPath)
+
+        coverUrl = publicUrlData.publicUrl
+      }
+
+      const { error: insertError } = await supabase
+        .from('audiovisuals')
+        .insert({
+          title: newItem.title.trim(),
+          category_id: newItem.category_id,
+          description: newItem.description.trim() || null,
+          cover_url: coverUrl,
+          release_year: newItem.release_year
+            ? Number(newItem.release_year)
+            : null,
+          quality_notes: newItem.quality_notes.trim() || null,
+          file_size_gb: newItem.file_size_gb
+            ? Number(newItem.file_size_gb)
+            : null,
+          is_featured: newItem.is_featured,
+          is_active: true,
+          created_by: currentUser.id,
+        })
+
+      if (insertError) throw insertError
+
+      setAdminMessage('¡Contenido añadido correctamente!')
+
+      setNewItem({
+        title: '',
+        category_id: '',
+        description: '',
+        release_year: '',
+        quality_notes: '',
+        file_size_gb: '',
+        is_featured: false,
+      })
+
+      setCoverFile(null)
+
+      const fileInput = document.getElementById('admin-cover')
+      if (fileInput) fileInput.value = ''
+
+      await loadAudiovisuals()
+    } catch (error) {
+      console.error('Error al guardar contenido:', error)
+
+      // Si falló el registro después de subir la portada,
+      // intentar retirar el archivo que quedó sin utilizar.
+      if (uploadedPath) {
+        await supabase.storage
+          .from('covers')
+          .remove([uploadedPath])
+      }
+
+      setAdminMessage(error.message || 'No se pudo guardar el contenido.')
+    } finally {
+      setAdminSaving(false)
+    }
+  }
+
+  // Cerrar sesión
   async function handleLogout() {
     const { error } = await supabase.auth.signOut()
 
@@ -312,6 +435,18 @@ export default function App() {
 
         {currentUser ? (
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            {isAdmin && (
+              <button
+                className="login-btn"
+                onClick={() => {
+                  setActivePage('admin')
+                  setAdminMessage('')
+                }}
+              >
+                Administración
+              </button>
+            )}
+
             <button
               className="login-btn"
               onClick={() => {
@@ -531,6 +666,181 @@ export default function App() {
               </section>
             )}
           </>
+        ) : activePage === 'admin' ? (
+          <section style={sectionStyle}>
+            <button
+              className="login-btn"
+              onClick={() => setActivePage('home')}
+            >
+              ← Volver a la tienda
+            </button>
+
+            <h1 style={{
+              color: '#58c7ff',
+              textAlign: 'center',
+              margin: '25px 0',
+            }}>
+              Panel de administración
+            </h1>
+
+            {!isAdmin ? (
+              <p>No tienes autorización para acceder.</p>
+            ) : (
+              <>
+                <h2 style={{ marginBottom: '20px' }}>
+                  Añadir nuevo contenido
+                </h2>
+
+                <form onSubmit={handleCreateAudiovisual}>
+                  <label>Nombre del contenido</label>
+                  <input
+                    style={inputStyle}
+                    value={newItem.title}
+                    onChange={(e) =>
+                      setNewItem({ ...newItem, title: e.target.value })
+                    }
+                    placeholder="Ejemplo: Avatar"
+                    required
+                  />
+
+                  <label>Categoría</label>
+                  <select
+                    style={inputStyle}
+                    value={newItem.category_id}
+                    onChange={(e) =>
+                      setNewItem({
+                        ...newItem,
+                        category_id: e.target.value,
+                      })
+                    }
+                    required
+                  >
+                    <option value="">Seleccionar categoría</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <label>Descripción</label>
+                  <textarea
+                    style={{ ...inputStyle, minHeight: '90px' }}
+                    value={newItem.description}
+                    onChange={(e) =>
+                      setNewItem({
+                        ...newItem,
+                        description: e.target.value,
+                      })
+                    }
+                    placeholder="Descripción del contenido"
+                  />
+
+                  <label>Portada</label>
+                  <input
+                    id="admin-cover"
+                    style={inputStyle}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(e) =>
+                      setCoverFile(e.target.files?.[0] || null)
+                    }
+                  />
+
+                  {coverFile && (
+                    <p style={{ color: '#58c7ff', marginBottom: '15px' }}>
+                      Imagen seleccionada: {coverFile.name}
+                    </p>
+                  )}
+
+                  <label>Año de lanzamiento</label>
+                  <input
+                    style={inputStyle}
+                    type="number"
+                    min="1900"
+                    max="2100"
+                    value={newItem.release_year}
+                    onChange={(e) =>
+                      setNewItem({
+                        ...newItem,
+                        release_year: e.target.value,
+                      })
+                    }
+                    placeholder="2026"
+                  />
+
+                  <label>Calidad</label>
+                  <input
+                    style={inputStyle}
+                    value={newItem.quality_notes}
+                    onChange={(e) =>
+                      setNewItem({
+                        ...newItem,
+                        quality_notes: e.target.value,
+                      })
+                    }
+                    placeholder="HD, Full HD, 4K..."
+                  />
+
+                  <label>Tamaño en GB</label>
+                  <input
+                    style={inputStyle}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={newItem.file_size_gb}
+                    onChange={(e) =>
+                      setNewItem({
+                        ...newItem,
+                        file_size_gb: e.target.value,
+                      })
+                    }
+                    placeholder="Ejemplo: 2.5"
+                  />
+
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    margin: '15px 0',
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={newItem.is_featured}
+                      onChange={(e) =>
+                        setNewItem({
+                          ...newItem,
+                          is_featured: e.target.checked,
+                        })
+                      }
+                    />
+                    Marcar como contenido destacado
+                  </label>
+
+                  <button
+                    type="submit"
+                    className="explore-btn"
+                    disabled={adminSaving}
+                    style={{ width: '100%' }}
+                  >
+                    {adminSaving ? 'Guardando contenido...' : 'Guardar contenido'}
+                  </button>
+                </form>
+
+                {adminMessage && (
+                  <p style={{
+                    marginTop: '20px',
+                    textAlign: 'center',
+                    color: adminMessage.includes('correctamente')
+                      ? '#58d68d'
+                      : '#ff8585',
+                  }}>
+                    {adminMessage}
+                  </p>
+                )}
+              </>
+            )}
+          </section>
         ) : (
           <section style={sectionStyle}>
             <button
@@ -540,7 +850,11 @@ export default function App() {
               ← Volver a la tienda
             </button>
 
-            <h1 style={{ textAlign: 'center', margin: '25px 0', color: '#58c7ff' }}>
+            <h1 style={{
+              textAlign: 'center',
+              margin: '25px 0',
+              color: '#58c7ff',
+            }}>
               Mi cuenta NEXXUS
             </h1>
 
