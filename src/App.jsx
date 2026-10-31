@@ -12,6 +12,10 @@ export default function App() {
   const [categories, setCategories] = useState([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [categoriesError, setCategoriesError] = useState('')
+  const [audiovisuals, setAudiovisuals] = useState([])
+  const [audiovisualsLoading, setAudiovisualsLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedCategory, setSelectedCategory] = useState('all')
   const [form, setForm] = useState({
     fullName: '',
     username: '',
@@ -28,7 +32,45 @@ export default function App() {
     supabase.auth.getSession().then(({ data }) => {
       setCurrentUser(data.session?.user ?? null)
     })
-    useEffect(() => {
+   useEffect(() => {
+  async function loadAudiovisuals() {
+    setAudiovisualsLoading(true)
+
+    const { data, error } = await supabase
+      .from('audiovisuals')
+      .select(`
+        id,
+        title,
+        description,
+        cover_url,
+        release_year,
+        quality_notes,
+        file_size_gb,
+        is_featured,
+        category_id,
+        categories (
+          name,
+          slug
+        )
+      `)
+      .eq('is_active', true)
+      .order('is_featured', { ascending: false })
+      .order('title', { ascending: true })
+
+    if (error) {
+      console.error('Error al cargar audiovisuales:', error)
+      setAudiovisuals([])
+    } else {
+      setAudiovisuals(data || [])
+    }
+
+    setAudiovisualsLoading(false)
+  }
+
+  loadAudiovisuals()
+  }, [])
+
+  useEffect(() => {
   async function loadCategories() {
     setCategoriesLoading(true)
     setCategoriesError('')
