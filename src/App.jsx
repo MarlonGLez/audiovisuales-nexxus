@@ -9,7 +9,9 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [activePage, setActivePage] = useState('home')
-
+  const [categories, setCategories] = useState([])
+  const [categoriesLoading, setCategoriesLoading] = useState(true)
+  const [categoriesError, setCategoriesError] = useState('')
   const [form, setForm] = useState({
     fullName: '',
     username: '',
@@ -26,6 +28,30 @@ export default function App() {
     supabase.auth.getSession().then(({ data }) => {
       setCurrentUser(data.session?.user ?? null)
     })
+    useEffect(() => {
+  async function loadCategories() {
+    setCategoriesLoading(true)
+    setCategoriesError('')
+
+    const { data, error } = await supabase
+      .from('categories')
+      .select('id, name, slug, description, billing_unit, billing_unit_label, sort_order')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+
+    if (error) {
+      console.error('Error al cargar categorías:', error)
+      setCategoriesError('No se pudieron cargar las categorías.')
+      setCategories([])
+    } else {
+      setCategories(data || [])
+    }
+
+    setCategoriesLoading(false)
+  }
+
+  loadCategories()
+}, [])
 
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
@@ -293,25 +319,23 @@ export default function App() {
               <h2>Explora nuestro catálogo</h2>
               <p>Encuentra lo que estás buscando.</p>
 
-              <div className="categories">
-                {[
-                  'Películas',
-                  'Animados',
-                  'Series animadas',
-                  'Anime',
-                  'Documentales',
-                  'Juegos',
-                  'Doramas',
-                  'Series',
-                  'Reality',
-                  'Miniseries',
-                ].map((category) => (
-                  <div className="category" key={category}>
-                    <span>✦</span>
-                    <h3>{category}</h3>
-                  </div>
-                ))}
-              </div>
+              {categoriesLoading ? (
+                <p>Cargando categorías...</p>
+               ) : categoriesError ? (
+                <p>{categoriesError}</p>
+               ) : categories.length === 0 ? (
+                <p>Próximamente tendremos contenido disponible.</p>
+               ) : (
+                 <div className="categories">
+                   {categories.map((category) => (
+                    <div className="category" key={category.id}>
+                      <span>✦</span>
+                      <h3>{category.name}</h3>
+                      {category.description && <p>{category.description}</p>}
+                    </div>
+                  ))}
+                </div>
+               )}
             </section>
 
             {!currentUser && (
